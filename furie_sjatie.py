@@ -1,0 +1,297 @@
+from tkinter import *
+import numpy as np
+import random
+from math import *
+from scipy.stats.stats import pearsonr
+import pickle
+from tkinter import messagebox
+from scipy.fft import fft, ifft
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+#Функция записи в файл
+def write(lst,nametxt):
+        for item in lst:
+            nametxt.write("%s\n" % item)
+#Функция чтения из файла
+def read(lst,lst_val,nametxt):
+        with open(nametxt) as file:
+                for line in file.readlines():
+                        a,b=[float(i) for i in line.split()]
+                        lst.append(a)
+                        lst_val.append(b)
+                        
+#нахождение области допустимости
+def angle(N1y,N2y,f1,f2):
+        
+        #получаем данные по скважинам
+        dist=[]
+        with open('distance_96_97_87.txt') as file:
+                for line in file.readlines():
+                        dist.append([abs(float(i)) for i in line.split()])
+        x96,y96,z96=dist[0]
+        x97,y97,z97=dist[1]
+        x87,y87,z87=dist[2]
+        
+        #падение
+##        z97+=100
+        
+        #расстояние между скважинами
+        d1=sqrt((x96-x97)**2+(y96-y97)**2+(z96-z97)**2)
+        d2=sqrt((x96-x87)**2+(y96-y87)**2+(z96-z87)**2)
+        d3=sqrt((x97-x87)**2+(y97-y87)**2+(z97-z87)**2)
+        if f1=='96' and f2=='97' or f1=='97' and f2=='96':
+                d=d1
+        elif f1=='96' and f2=='87' or f1=='87' and f2=='96':
+                d=d2
+        else:
+                d=d3
+                
+        c=d*tan(5*pi/180)#сдвиг
+        MD=[]
+        Z=[]
+        with open(f1+'MD.txt') as file:
+                for line in file.readlines():
+                        l=[float(i) for i in line.split()]
+                        MD.append(l[0])
+                        Z.append(abs(l[3]))
+                        
+        MD2=[]
+        Z2=[]
+        with open(f2+'MD.txt') as file:
+                for line in file.readlines():
+                        l=[float(i) for i in line.split()]
+                        MD2.append(l[0])
+                        Z2.append(abs(l[3]))
+        #падение
+##        if f1=='97':
+##                Z=[i+100 for i in Z]
+##        if f2=='97':
+##                Z2=[i+100 for i in Z2]
+            
+        #интерполирую MD и Z
+        c1=np.linspace(0,len(MD)-1, 1000)
+        
+        MD=np.interp(c1,[i for i in range(0,len(MD))],MD)
+        Z=np.interp(c1,[i for i in range(0,len(Z))],Z)
+        
+        c2=np.linspace(0,len(MD2)-1, 1000)
+        MD2=np.interp(c2,[i for i in range(0,len(MD2))],MD2)
+        Z2=np.interp(c2,[i for i in range(0,len(Z2))],Z2)
+        
+
+        
+        #маркеры MD в Z
+        N1MD=0
+        minMDN1=float('inf')
+        minMDN2=float('inf')
+        indN1=0
+        indN2=0
+        for i in range(len(MD)):
+##                print(MD[i])
+                if abs(MD[i]-N1y)<minMDN1:
+                   minMDN1=abs(MD[i]-N1y)
+                   N1MD=MD[i]
+                   indN1=i
+                if abs(MD[i]-N2y)<minMDN2:
+                   minMDN2=abs(MD[i]-N2y)
+                   N2MD=MD[i]
+                   indN2=i
+                   
+##        print('маркеры MD',N1MD,N2MD)
+        N1y=Z[indN1]
+        N2y=Z[indN2]
+##        print('маркеры MD в Z',N1y,N2y)
+        
+        #сдвиг
+        N1y-=c
+        N2y+=c
+##        print('Z после сдвига',N1y,N2y)
+        
+        #обратно в MD
+        N1Z=0
+        N2Z=0
+        minZN1=float('inf')
+        minZN2=float('inf')
+        indN1=0
+        indN2=0
+        for i in range(len(Z2)):
+                if abs(Z2[i]-N1y)<minZN1:
+                   minZN1=abs(Z2[i]-N1y)
+                   N1Z=Z2[i]
+                   indN1=i
+                if abs(Z2[i]-N2y)<minZN2:
+                   minZN2=abs(Z2[i]-N2y)
+                   N2Z=Z2[i]
+                   indN2=i
+##        print('Значения Z после сдвига на второй скважине',N1Z,N2Z)
+        N1y=MD2[indN1]
+        N2y=MD2[indN2]
+        
+##        print('Допустимый:',N1y,N2y)
+        return N1y,N2y
+def perebor():
+    s=[['97','96','87'],['96','97','87'],['97','87','96'],['87','96','97'],['87','97','96'],['96','87','97']]
+    markers={'97':[2982.6,2993.1],'96':[3012.4,3020.4],'87':[3076.8,3087]}
+    for i in s:
+        print(i)
+        k1,k2=fur(i[0],i[1],a1=markers[i[0]][0],a2=markers[i[0]][1])
+        print(k1,'\t',k2)
+        k1,k2=fur(i[1],i[2],a1=k1,a2=k2)
+        print(k1,'\t',k2)
+        k1,k2=fur(i[2],i[0],a1=k1,a2=k2)
+        print(k1,'\t',k2)
+     
+def fur(f1,f2,a1=0,a2=0):
+    #1
+    global flag
+    x=list()#глубины
+    x_val=list()#значения
+    read(x,x_val,'s'+f1+".txt")
+##    c=np.linspace(0,len(x),500)
+##    x=np.interp(c,[i for i in range(0,len(x))],x)
+##    x_val=np.interp(c,[i for i in range(0,len(x_val))],x_val)
+##    fig1, axes1 = plt.subplots(1, 2, figsize=(12, 4))#реальные
+    #2 
+    y=list()#глубины
+    y_val=list()#значения
+    read(y,y_val,'s'+f2+".txt")
+##    c=np.linspace(0,len(y),500)
+##    y=np.interp(c,[i for i in range(0,len(y))],y)
+##    y_val=np.interp(c,[i for i in range(0,len(y_val))],y_val)
+##    if f1=='97':
+##        x=np.arange(min(x)+2,max(x)-2,0.2)
+##    elif f2=='97':
+##        y=np.arange(min(y)+2,max(x)-2,0.2)
+##    axes1[0].plot(x_val,x)
+##    plt.show()
+        
+    c=np.linspace(0,len(y),300)
+    y=np.interp(c,[i for i in range(0,len(y))],y)
+    y_val=np.interp(c,[i for i in range(0,len(y_val))],y_val)
+    
+    c=np.linspace(0,len(x),300)
+    x=np.interp(c,[i for i in range(0,len(x))],x)
+    x_val=np.interp(c,[i for i in range(0,len(x_val))],x_val)
+    
+    N1=a1
+    N2=a2
+    M=int(message3.get())
+    minN1=float('inf')
+    minN2=float('inf')
+    N1_new=0
+    N2_new=0
+    for i in range(len(x)):
+            if x[i]==N1:
+                    N1_new=i
+            elif minN1>abs(x[i]-N1):
+                    minN1=abs(x[i]-N1)
+                    N1_new=i
+            if x[i]==N2:
+                    N2_new=i
+            elif minN2>abs(x[i]-N2):
+                    minN2=abs(x[i]-N2)
+                    N2_new=i
+    N1=N1_new
+    N2=N2_new
+##    print('Приближенное к маркерам',x[N1],x[N2])
+    distance=angle(x[N1],x[N2],f1,f2)
+##    print(x[N1],x[N2])
+    #отделяем часть графика x с границами N1,N2
+    x_tek=[]#отделили глубины на отрезке x 
+    x_tek_val=[]#отделили значения на отрезке x
+
+    for i in range(N1,N2+1):
+        x_tek.append(x[i])
+        x_tek_val.append(x_val[i])
+
+    y_tek=[]#отделили глубины на отрезке y
+    y_tek_val=[]#отделили значения на отрезке y
+
+    pog=[]
+
+    #перебираем график y учитывая отклонение M
+    for j in range(N2-N1-M,N2-N1+M+1):#перебираем возможные размеры окна
+        for k in range(len(y_val)-j):#перебираем первую границу окна от 0 до конца графика
+                    y_tek=[]#отделили глубины на отрезке y
+                    y_tek_val=[]#отделили значения на отрезке y
+                    for i in range(k,k+j+1):
+                            y_tek.append(y[i])
+                            y_tek_val.append(y_val[i])
+                    if y_tek==[]:
+                            break
+                    #переинтерполируем два получившихся окна(так как их размеры могут не совпадать)
+                    if len(x_tek_val) != len(y_tek_val):
+                        c1=np.linspace(min(x_tek),max(x_tek), max(len(x_tek),len(y_tek)))
+                        x_tek_interp=np.interp(c1,x_tek,x_tek_val)
+                        c1=np.linspace(min(y_tek),max(x_tek), max(len(x_tek),len(y_tek)))
+                        y_tek_interp=np.interp(c1,y_tek,y_tek_val)
+                    else:
+                        x_tek_interp=x_tek_val
+                        y_tek_interp=y_tek_val
+##                    print(y_tek[0],y_tek[-1])
+                    if y_tek[0]>=distance[0] and y_tek[-1]<=distance[-1]:
+                            x_tek_interp= [float(i)/sum(x_tek_interp) for i in x_tek_interp]
+                            y_tek_interp= [float(i)/sum(x_tek_interp) for i in y_tek_interp]
+                            #нормировка
+##                            x_tek_interp=[(i-min(x_tek_interp))/(max(x_tek_interp)-min(x_tek_interp)) for i in x_tek_interp]
+##                            y_tek_interp=[(i-min(y_tek_interp))/(max(y_tek_interp)-min(y_tek_interp)) for i in y_tek_interp]
+##                            x_tek_interp=[float(i)/max(x_tek_interp) for i in x_tek_interp]
+##                            y_tek_interp=[float(i)/max(y_tek_interp) for i in y_tek_interp]
+                            #коэффициенты фурье
+                            x_tek_interp=fft(x_tek_interp,n=i)
+                            y_tek_interp=fft(y_tek_interp,n=i)
+                            
+                            pogr_tek=0
+                            for i in range(len(x_tek_interp)):
+                                pogr_tek+=abs(x_tek_interp[i]-y_tek_interp[i])
+                            pog.append([y[k],y[k+j],pogr_tek])
+    if len(pog)==0:
+            print('Нет пути')
+    else:
+            minpog=float('inf')
+            ind=0
+            vse=0
+            for i in pog:
+                if i[2]<minpog:
+                    minpog=i[2]
+                    ind=vse
+                vse+=1
+##            print('Итог:',pog[ind][0],'\t',pog[ind][1])
+            return pog[ind][0],pog[ind][1]
+    
+#создаем окно для кнопок 
+tk=Tk()
+tk.title("Панель управления визуализацией")
+
+#создаем поля ввода 
+#левая граница
+message = StringVar()
+
+kor_entry = Entry(textvariable=message,width=50)
+kor_entry.grid(row=0,column=1, padx=5, pady=5)
+kor_label = Label(text="Введите левую границу интервала:",width=50)
+kor_label.grid(row=0, column=0, sticky="w")
+
+#правая граница
+message2 = StringVar()
+
+kor_entry2 = Entry(textvariable=message2,width=50)
+kor_entry2.grid(row=1,column=1, padx=5, pady=5)
+kor_label2 = Label(text="Введите правую границу интервала:",width=50)
+kor_label2.grid(row=1, column=0, sticky="w")
+
+#отклонение
+message3 = StringVar()
+
+kor_entry3 = Entry(textvariable=message3,width=50)
+kor_entry3.grid(row=2,column=1, padx=5, pady=5)
+kor_label3 = Label(text="Введите отклонение:",width=50)
+kor_label3.grid(row=2, column=0, sticky="w")
+
+#кнопка корреляции
+btn1=Button(tk, text='Построить соответсвие методом корреляции',width=50,command=perebor)
+btn1.grid(row=3,column=1, padx=5, pady=5, sticky="e")                
